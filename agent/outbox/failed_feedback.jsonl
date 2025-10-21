@@ -1,0 +1,2 @@
+{"timestamp":"2025-10-21T19:27:22.153Z","url":"http://localhost:3000/api/feedback","feedback":{"pdv_id":"LINX_PDV_SV01","input_raw":"VERYPOOR","transaction_details":"20251021,98,97,1243"}}
+{"timestamp":"2025-10-21T19:30:19.004Z","url":"http://localhost:3000/api/feedback","feedback":{"pdv_id":"LINX_PDV_SV01","input_raw":"VERYPOOR","transaction_details":"20251021,102,97,1243"}}
