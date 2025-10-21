@@ -1,31 +1,54 @@
 // server/server.js
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config(); // Carrega variáveis de ambiente do .env
+require('dotenv').config();
 
-// Importações da nossa arquitetura
-const { connectDB, closeDB } = require('./src/infrastructure/database/mongodb'); // Ajuste o caminho se necessário
-const FeedbackMongoRepository = require('./src/infrastructure/repositories/FeedbackMongoRepository'); // Ajuste o caminho
+const { connectDB, closeDB } = require('./src/infrastructure/database/mongodb');
+const FeedbackMongoRepository = require('./src/infrastructure/repositories/FeedbackMongoRepository');
 
 const app = express();
-const PORT = process.env.PORT || 3000; // Use variável de ambiente para a porta
+const PORT = process.env.PORT || 3000;
 
-// Middlewares (mantidos)
 app.use(cors());
 app.use(express.json());
 
-// Middlewares de Segurança (mantidos)
 function requireApiKey(req, res, next) {
-    // ... (código mantido)
+    const expectedApiKey = process.env.API_KEY;
+    const providedApiKey = req.header('x-api-key');
+
+    if (!expectedApiKey) {
+        console.error('[requireApiKey] ERRO: API_KEY não configurada no arquivo .env.');
+        return res.status(503).json({ error: 'Servidor mal configurado: chave de API ausente.' });
+    }
+
+    if (!providedApiKey || providedApiKey !== expectedApiKey) {
+        console.warn(`[requireApiKey] Acesso negado. Chave fornecida inválida ou ausente.`);
+        return res.status(401).json({ error: 'Não autorizado' });
+    }
+    
+    console.log('[requireApiKey] Chave de API validada com sucesso.');
+    next();
 }
-// ... (Rate Limiter mantido)
 
-// --- Instancia o Repositório ---
+const _rateMap = new Map();
+const RATE_WINDOW = Number(process.env.RATE_WINDOW_MS) || 60_000;
+const RATE_MAX = Number(process.env.RATE_LIMIT_MAX) || 60;
+function rateLimiter(req, res, next) {
+    const key = req.ip || req.connection.remoteAddress || 'unknown';
+    const now = Date.now();
+    const entry = _rateMap.get(key);
+    if (!entry || now - entry.startAt > RATE_WINDOW) { _rateMap.set(key, { count: 1, startAt: now }); return next(); }
+    entry.count += 1;
+    if (entry.count > RATE_MAX) { return res.status(429).json({ error: 'Too Many Requests' }); }
+    return next();
+}
+
 const feedbackRepository = new FeedbackMongoRepository();
-// -----------------------------
 
-// Endpoint POST /api/feedback - MODIFICADO para usar o repositório
-app.post('/api/feedback', requireApiKey, /* rateLimiter, */ async (req, res, next) => { // Removi rateLimiter temporariamente para teste, pode adicionar de volta
+app.post('/api/feedback', requireApiKey, rateLimiter, async (req, res, next) => {
+    console.log(`[SERVER POST /api/feedback] Recebido request: ${new Date().toISOString()}`);
+    console.log("[SERVER POST /api/feedback] Body:", req.body);
+
     try {
         const { pdv_id, input_raw, transaction_details } = req.body;
 
@@ -33,73 +56,77 @@ app.post('/api/feedback', requireApiKey, /* rateLimiter, */ async (req, res, nex
             return res.status(400).json({ error: 'pdv_id e input_raw são obrigatórios' });
         }
 
-        // Mapeamento de categoria (mantido)
+        // Mapeamento de categoria
         let categoria = 'Não Definida';
-         switch (input_raw.toUpperCase()) {
-             case 'VERYGOOD': categoria = 'Gostei de tudo'; break;
-             case 'GOOD':     categoria = 'Ambiente'; break;
-             case 'FAIR':     categoria = 'Preço'; break;
-             case 'POOR':     categoria = 'Atendimento'; break;
-             case 'VERYPOOR': categoria = 'Tempo de Espera'; break;
-         }
+        switch (input_raw.toUpperCase()) {
+            case 'VERYGOOD': categoria = 'Gostei de tudo'; break;
+            case 'GOOD':     categoria = 'Ambiente'; break;
+            case 'FAIR':     categoria = 'Preço'; break;
+            case 'POOR':     categoria = 'Atendimento'; break;
+            case 'VERYPOOR': categoria = 'Tempo de Espera'; break;
+        }
 
-        // Cria o objeto de dados para salvar
+        // --- ALTERAÇÃO PARA FORMATAR O CAMPO transaction_details ---
+        let parsedTransactionDetails = transaction_details || null; // Valor padrão
+        if (transaction_details && typeof transaction_details === 'string') {
+            const parts = transaction_details.split(',');
+            if (parts.length === 4) {
+                parsedTransactionDetails = {
+                    Data: parts[0],
+                    NSU: parts[1],
+                    PDV: parts[2],
+                    Loja: parts[3]
+                };
+                console.log("[SERVER] transaction_details formatado para objeto:", parsedTransactionDetails);
+            }
+        }
+        // -----------------------------------------------------------
+
         const feedbackData = {
-            timestamp: new Date().toISOString(), // Pode usar o timestamp que vem do agent se preferir
+            timestamp: new Date().toISOString(),
             pdv_id: pdv_id,
             input_raw: input_raw,
             categoria: categoria,
-            transaction_details: transaction_details || null
+            transaction_details: parsedTransactionDetails // Usa o valor formatado
         };
 
-        // --- USA O REPOSITÓRIO PARA SALVAR ---
+        console.log("[SERVER POST /api/feedback] Tentando salvar no repositório...");
         const savedFeedback = await feedbackRepository.save(feedbackData);
-        // ------------------------------------
+        console.log("[SERVER POST /api/feedback] Salvo com sucesso no repositório:", savedFeedback);
 
-        console.log('Feedback recebido e salvo no MongoDB:', savedFeedback);
         res.status(201).json({ message: 'Feedback recebido com sucesso!', data: savedFeedback });
+        console.log(`[SERVER POST /api/feedback] Resposta 201 enviada: ${new Date().toISOString()}`);
 
     } catch (error) {
-         console.error("Erro no endpoint /api/feedback (POST):", error);
-         // Passa o erro para um middleware de tratamento de erros, se houver
-         next(error); // Ou envia uma resposta de erro genérica
-        // res.status(500).json({ error: "Erro interno ao processar o feedback." });
+        console.error("[SERVER POST /api/feedback] Erro no try-catch:", error);
+        next(error);
     }
 });
 
-// Endpoint GET /api/feedback - MODIFICADO para usar o repositório
-app.get('/api/feedback', async (req, res, next) => {
+app.get('/api/feedback', requireApiKey, async (req, res, next) => {
     try {
-        // --- USA O REPOSITÓRIO PARA BUSCAR ---
         const allFeedbacks = await feedbackRepository.findAll();
-        // -----------------------------------
         res.json(allFeedbacks);
     } catch (error) {
         console.error("Erro no endpoint /api/feedback (GET):", error);
-        next(error); // Ou envia uma resposta de erro genérica
-        // res.status(500).json({ error: "Erro interno ao buscar feedbacks." });
+        next(error);
     }
 });
 
-// Middleware genérico de tratamento de erros (opcional, mas recomendado)
 app.use((err, req, res, next) => {
-  console.error("Erro não tratado:", err.stack || err.message);
-  res.status(err.status || 500).json({
-    error: err.message || 'Erro interno do servidor.'
-  });
+    console.error("Erro não tratado:", err.stack || err.message);
+    res.status(err.status || 500).json({
+        error: err.message || 'Erro interno do servidor.'
+    });
 });
 
-
-// Função para iniciar o servidor
 async function startServer() {
     try {
-        await connectDB(); // Conecta ao banco ANTES de iniciar o servidor
+        await connectDB();
         app.listen(PORT, () => {
             console.log('--- Servidor de Feedback Iniciado ---');
             console.log(`Conectado ao MongoDB (${process.env.MONGODB_DB_NAME})`);
             console.log(`API rodando na porta ${PORT}`);
-            console.log(`Endpoint de recebimento: http://localhost:${PORT}/api/feedback (POST)`);
-            console.log(`Endpoint de visualização: http://localhost:${PORT}/api/feedback (GET)`);
         });
     } catch (error) {
         console.error("Falha ao iniciar o servidor:", error);
@@ -107,7 +134,6 @@ async function startServer() {
     }
 }
 
-// Lida com o encerramento gracioso
 process.on('SIGINT', async () => {
     console.log('Recebido SIGINT. Fechando conexão com MongoDB...');
     await closeDB();
@@ -119,5 +145,5 @@ process.on('SIGTERM', async () => {
     process.exit(0);
 });
 
-// Inicia o servidor
 startServer();
+
