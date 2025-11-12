@@ -8,4 +8,5 @@
 # REGRAS PARA NODE_MODULES E DEPENDÊNCIAS
 /agent/node_modules
 /server/node_modules
-node_modules/ # Captura qualquer node_modules que possa aparecer na raiz ou subpasta
+node_modules/ 
+# Captura qualquer node_modules que possa aparecer na raiz ou subpasta
