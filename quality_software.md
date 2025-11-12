@@ -3,7 +3,7 @@
 Você é um especialista sênior em qualidade de software, segurança e arquitetura. Realize uma análise completa e profunda do repositório fornecido.
 
 ## 📂 CAMINHO DO REPOSITÓRIO
-**Path:** [c:\atendimento]
+**Path:** [C:\temp\encantometro]
 
 ---
 

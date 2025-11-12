@@ -36,8 +36,12 @@ async function send(feedback) {
   const url = String(CONFIG.api_url || process.env.API_URL || '').trim();
   if (!url) return Promise.reject(new Error('API URL not configured (CONFIG.api_url or API_URL env)'));
 
-  // header API key: prefer ENV then CONFIG.api_key
-  const apiKey = process.env.API_KEY || CONFIG.api_key || '';
+  // --- CORREÇÃO DE SEGURANÇA: API key só pode vir do ambiente ---
+  const apiKey = process.env.API_KEY || ''; 
+  if (!apiKey) {
+      return Promise.reject(new Error('API_KEY environment variable is not set.'));
+  }
+  // -------------------------------------------------------------
 
   const headers = {
     'Content-Type': 'application/json'
