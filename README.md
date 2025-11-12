@@ -119,3 +119,18 @@ Contato / Referências
 
 Licença
 - MIT (defina explicitamente se necessário).
+
+## Segurança — Variáveis de ambiente
+
+- Não comite arquivos com segredos (ex.: `server/.env`). Use `server/.env.example` como modelo.
+- Para uso local: copie `server/.env.example` para `server/.env` e preencha os valores:
+  - MONGODB_URI
+  - MONGODB_DB_NAME
+  - API_KEY
+- Se segredos foram expostos, rotacione credenciais imediatamente no provedor (MongoDB, serviços que usam a API_KEY, etc.).
+- Para remover um `.env` já commitado do índice:
+  - git rm --cached server/.env
+  - adicionar `server/.env` ao `.gitignore`
+  - git commit -m "remove server/.env from repo and add to .gitignore"
+- Para purgar o histórico (opcional, recomendado se segredos já estiveram no repo), use ferramentas como BFG ou git-filter-repo e depois rotacione as chaves.
+- Considere usar Secret Manager (Azure/AWS/GCP) e configurar scanners de segredos (git-secrets/trufflehog) em CI e hooks de pré-commit.

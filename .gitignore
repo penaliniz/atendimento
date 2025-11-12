@@ -1,5 +1,7 @@
 # Ignore environment files for the server (contain secrets)
  /server/.env
+ *.env
+.env
 # Optional local env overrides
  /server/.env.local
  /agent/node_modules
