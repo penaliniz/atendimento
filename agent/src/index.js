@@ -22,6 +22,24 @@ const { requestRefocus } = require('./infrastructure/services/requestRefocus'); 
 console.log(`[agent] starting - pid=${process.pid} env=${process.env.NODE_ENV || 'dev'}`);
 const consentFile = path.resolve(__dirname, '..', 'consent.log');
 
+// --- NOVA FUNÇÃO UTILITÁRIA ---
+/**
+ * Extrai o ID do PDV da string transaction_details.
+ * O formato é: Data,NSU,PDV,Loja. O PDV está na posição [2].
+ * @param {string} transactionData Ex: "20251019,80,97,1243"
+ * @returns {string|null} O PDV ID (ex: "97") ou null.
+ */
+function extractPdvIdFromTransaction(transactionData) {
+    if (!transactionData || typeof transactionData !== 'string') return null;
+    const parts = transactionData.split(',');
+    // O PDV é o terceiro campo (índice 2)
+    if (parts.length === 4) {
+        return parts[2].trim();
+    }
+    return null;
+}
+// ------------------------------
+
 // Função askConsentIfNeeded (sem alterações lógicas significativas)
 async function askConsentIfNeeded() {
     if (!CONFIG.enable_keyboard_listener) { console.log('[agent] keyboard listener disabled by configuration.'); return false; }
@@ -47,9 +65,18 @@ async function askConsentIfNeeded() {
         console.log(`[agent] Venda Finalizada. Feedback: ${feedbackReceived || 'Nenhum'}, Dados Transação: ${transactionData || 'Nenhum'}`);
 
         if (feedbackReceived) {
-            console.log(`[agent] Enviando feedback "${feedbackReceived}" com dados da transação para a API...`);
+            // --- EXTRAI O PDV_ID DINAMICAMENTE DA TRANSAÇÃO ---
+            const extractedPdvId = extractPdvIdFromTransaction(transactionData);
+
+            if (!extractedPdvId) {
+                console.error(`[FALHA] Não foi possível extrair PDV ID dos dados da transação: ${transactionData}. O envio do feedback foi cancelado.`);
+                return; // Aborta o envio se o PDV ID não puder ser determinado
+            }
+            // -------------------------------------------------
+
+            console.log(`[agent] Enviando feedback "${feedbackReceived}" para o PDV: ${extractedPdvId}...`);
             const payload = {
-                pdv_id: CONFIG.pdv_id,
+                pdv_id: extractedPdvId, // Usa o PDV ID extraído
                 input_raw: feedbackReceived,
                 transaction_details: transactionData // Inclui os dados extraídos
             };
@@ -57,8 +84,7 @@ async function askConsentIfNeeded() {
                 await feedbackService.send(payload); // Envia o payload completo
                 console.log("[agent] Feedback e dados enviados com sucesso.");
 
-                // Chama o refocus APÓS o envio (se necessário)
-                 // console.log("[agent] Chamando refocus..."); // Descomente se quiser reativar
+                // Chamada do refocus comentada (manter como está no original)
                  // setTimeout(() => {
                  //    requestRefocus().catch((err) => {
                  //        console.error(`[FALHA] requestRefocus erro pós-venda: ${err && err.message}`);

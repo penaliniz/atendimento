@@ -1,5 +1,4 @@
 {
-  "pdv_id": "LINX_PDV_SV01",
   "api_url": "http://localhost:3000/api/feedback",
   "device_vendor_id": 1155,
   "device_product_id": 22352,
